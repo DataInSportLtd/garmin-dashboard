@@ -11,7 +11,7 @@ import os
 import requests
 
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
-MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
+MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:14b")
 
 DISCLAIMER = (
     "_AI-generated from your Garmin data for general fitness guidance only — "

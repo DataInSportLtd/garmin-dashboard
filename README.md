@@ -50,13 +50,15 @@ your data using a **local** model — nothing is sent to any cloud service. It n
 [Ollama](https://ollama.com):
 
 ```bash
-# one-time: install Ollama (download the app from ollama.com), then pull the model
-ollama pull llama3.1:8b
+# one-time: install Ollama (download the app from ollama.com), then pull a model
+ollama pull qwen2.5:14b   # default — best plans (needs ~16GB RAM)
+ollama pull llama3.1:8b   # lighter/faster alternative (~8GB RAM)
 ```
 
-`run.sh` auto-starts the Ollama server if it's installed. To use a different model,
-set `OLLAMA_MODEL` (e.g. `export OLLAMA_MODEL=qwen2.5:7b`). The other pages work
-fine without Ollama — only the AI Coach page requires it.
+`run.sh` auto-starts the Ollama server if it's installed. Pick the model from the
+sidebar on the AI Coach page, or set a default with `OLLAMA_MODEL`
+(e.g. `export OLLAMA_MODEL=llama3.1:8b`). The other pages work fine without Ollama —
+only the AI Coach page requires it.
 
 ## Files
 

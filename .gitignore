@@ -11,3 +11,6 @@ __pycache__/
 
 # Local data cache (personal health data — keep on-device only)
 *.db
+
+# macOS junk
+.DS_Store

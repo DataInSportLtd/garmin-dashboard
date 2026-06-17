@@ -14,6 +14,9 @@ import os
 import sqlite3
 from contextlib import closing
 from datetime import date, timedelta
+from io import StringIO
+
+import pandas as pd
 
 import garmin_data as gd
 
@@ -24,7 +27,40 @@ FRESH_DAYS = 2  # always re-fetch the most recent N days (today/yesterday still 
 def _conn():
     conn = sqlite3.connect(DB_PATH)
     conn.execute("CREATE TABLE IF NOT EXISTS daily (date TEXT PRIMARY KEY, data TEXT)")
+    # Generic blob store for immutable per-activity data (streams/splits/sets).
+    conn.execute("CREATE TABLE IF NOT EXISTS blobs (key TEXT PRIMARY KEY, data TEXT)")
     return conn
+
+
+def _cached_df(g, key: str, fetch):
+    """Return a DataFrame for `key` from the blob cache, fetching+storing on miss.
+
+    Used for activity data that never changes once recorded, so we cache forever.
+    """
+    with closing(_conn()) as conn:
+        row = conn.execute("SELECT data FROM blobs WHERE key = ?", (key,)).fetchone()
+        if row is not None:
+            return pd.read_json(StringIO(row[0]), orient="split")
+        df = fetch()
+        conn.execute("INSERT OR REPLACE INTO blobs(key, data) VALUES (?, ?)",
+                     (key, df.to_json(orient="split")))
+        conn.commit()
+        return df
+
+
+def cached_streams(g, activity_id: int):
+    return _cached_df(g, f"streams:{activity_id}",
+                      lambda: gd.fetch_activity_streams(g, activity_id))
+
+
+def cached_splits(g, activity_id: int):
+    return _cached_df(g, f"splits:{activity_id}",
+                      lambda: gd.fetch_splits(g, activity_id))
+
+
+def cached_exercise_sets(g, activity_id: int):
+    return _cached_df(g, f"sets:{activity_id}",
+                      lambda: gd.fetch_exercise_sets(g, activity_id))
 
 
 def _date_list(start: date, end: date):
@@ -73,6 +109,7 @@ def cache_stats():
 def clear_cache():
     with closing(_conn()) as conn:
         conn.execute("DELETE FROM daily")
+        conn.execute("DELETE FROM blobs")
         conn.commit()
 
 

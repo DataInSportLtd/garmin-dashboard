@@ -30,11 +30,11 @@ labels = [
     f"{w} · {n} · {d:.2f} km"
     for w, n, d in zip(runs["when"], runs["name"], runs["distance_km"].fillna(0))
 ]
-# Support deep-link via ?run=<activityId> (set when we add click-through later).
-qp_id = st.query_params.get("run")
+# Honour a click-through from the Running page (session_state) or ?run= deep-link.
+picked_id = st.session_state.pop("selected_run", None) or st.query_params.get("run")
 default = 0
-if qp_id:
-    match = runs.index[runs["activity_id"] == int(qp_id)] if "activity_id" in runs else []
+if picked_id and "activity_id" in runs:
+    match = runs.index[runs["activity_id"] == int(picked_id)]
     default = int(match[0]) if len(match) else 0
 
 choice = st.selectbox("Select a run", range(len(runs)),

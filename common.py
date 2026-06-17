@@ -60,12 +60,12 @@ def training_readiness(day: str):
 
 @st.cache_data(ttl=1800, show_spinner="Loading run streams…")
 def streams(activity_id: int):
-    return gd.fetch_activity_streams(client(), activity_id)
+    return db.cached_streams(client(), activity_id)
 
 
 @st.cache_data(ttl=1800, show_spinner="Loading splits…")
 def splits(activity_id: int):
-    return gd.fetch_splits(client(), activity_id)
+    return db.cached_splits(client(), activity_id)
 
 
 @st.cache_data(ttl=1800, show_spinner="Loading sleep…")
@@ -90,7 +90,7 @@ def strength(limit: int = 60):
 
 @st.cache_data(ttl=1800, show_spinner="Loading set log…")
 def exercise_sets(activity_id: int):
-    return gd.fetch_exercise_sets(client(), activity_id)
+    return db.cached_exercise_sets(client(), activity_id)
 
 
 def refresh_button(sidebar=True):

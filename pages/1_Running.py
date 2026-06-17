@@ -80,7 +80,12 @@ if not runs.empty:
         {"distance_km": 2, "duration_min": 0, "elev_gain_m": 0})
     show.columns = ["When", "Name", "Dist (km)", "Pace", "Time (min)", "Avg HR",
                     "Max HR", "Cal", "Elev (m)"]
-    st.dataframe(show, use_container_width=True, hide_index=True)
-    st.caption("Per-run drill-down (maps, splits, per-second streams) lands in the next phase.")
+    st.caption("👉 Click a row to open the full drill-down (map, splits, per-second streams).")
+    event = st.dataframe(show, use_container_width=True, hide_index=True,
+                         on_select="rerun", selection_mode="single-row", key="runlog")
+    sel = event.selection.rows
+    if sel:
+        st.session_state["selected_run"] = int(runs.iloc[sel[0]]["activity_id"])
+        st.switch_page("pages/2_Run_Detail.py")
 else:
     st.info("No running activities found.")

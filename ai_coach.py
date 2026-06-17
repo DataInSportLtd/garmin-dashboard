@@ -49,7 +49,7 @@ def chat(system: str, user: str, model: str = MODEL, temperature: float = 0.6) -
                 {"role": "user", "content": user},
             ],
             "stream": False,
-            "options": {"temperature": temperature, "num_ctx": 8192},
+            "options": {"temperature": temperature, "num_ctx": 8192, "num_predict": 2048},
         },
         timeout=600,
     )
@@ -111,47 +111,105 @@ def format_context(ctx: dict) -> str:
     return "\n".join(lines) if lines else "No recent data available."
 
 
+def list_models():
+    """Names of models installed in the local Ollama instance (for the UI picker)."""
+    try:
+        tags = requests.get(f"{OLLAMA_URL}/api/tags", timeout=3).json()
+        return sorted(m.get("name", "") for m in tags.get("models", []) if m.get("name"))
+    except Exception:
+        return [MODEL]
+
+
+def format_prefs(prefs: dict) -> str:
+    """Render the user's stated goals/preferences for a plan into a prompt block."""
+    if not prefs:
+        return "(none specified)"
+    lines = []
+    for k, v in prefs.items():
+        if v in (None, "", [], False):
+            continue
+        if isinstance(v, list):
+            v = ", ".join(map(str, v))
+        if v is True:
+            v = "yes"
+        lines.append(f"- {k}: {v}")
+    return "\n".join(lines) if lines else "(none specified)"
+
+
 # --- Coaching prompts --------------------------------------------------------
 _SYSTEM = (
-    "You are an elite endurance and strength coach with a sports-science PhD. "
-    "You give specific, safe, evidence-based guidance grounded ONLY in the athlete's "
-    "data provided. Respect recovery: if readiness is low, HRV is low/unbalanced, "
-    "sleep is poor, or training status is 'Strained'/'Overreaching', prioritise rest "
-    "and easy work over hard sessions. Be concise and practical. Output clean GitHub "
-    "markdown with short sections and tables where useful. Never invent data you "
-    "weren't given. You are not a doctor; for pain/injury, advise seeing a professional."
+    "You are an elite endurance, strength and rehabilitation coach with a sports-science "
+    "PhD and decades of practice. You design specific, individualised, evidence-based plans. "
+    "PRINCIPLES: progressive overload, specificity, periodisation, polarised (80/20) "
+    "endurance distribution, adequate recovery and deloads. You ALWAYS honour the athlete's "
+    "stated goals and constraints (days available, equipment, target race/date, focus areas) "
+    "EXACTLY — never schedule more sessions than they asked for. You ground decisions in the "
+    "athlete's data: derive running paces from their race predictors and recent runs; respect "
+    "recovery when readiness/HRV/sleep are poor or training status is 'Strained'/'Overreaching'. "
+    "Be concrete: real paces (min/km), real sets×reps×intensity, week-to-week progression. "
+    "Output clean GitHub markdown: a short summary line, tables for schedules, brief rationale. "
+    "Never invent data you weren't given. You are not a doctor; for pain or injury, recommend "
+    "assessment by a qualified physiotherapist or doctor."
 )
 
 _PROMPTS = {
     "running": (
-        "Using the data below, write a personalised **7-day running plan**.\n"
-        "- Open with a one-line readiness verdict (train / easy / rest today).\n"
-        "- Give a day-by-day table: Day | Session | Distance | Target pace | Purpose.\n"
-        "- Base paces on the race predictors and recent runs; set easy/threshold/interval "
-        "zones accordingly.\n- Adapt volume to training status & readiness; include at least "
-        "one rest/recovery day.\n- End with 2-3 bullet coaching notes.\n\nATHLETE DATA:\n{ctx}"
+        "Design a personalised **running plan** for this athlete.\n\n"
+        "REQUIREMENTS:\n"
+        "1. One-line **today verdict** (train hard / easy / recovery / rest) from their readiness data.\n"
+        "2. A **pace zones** table (Easy, Marathon, Threshold, Interval/VO2, Repetition) with actual "
+        "min/km ranges derived from their race predictors and recent runs.\n"
+        "3. A **next-7-days** table: Day | Session | Distance/Time | Target pace | Purpose — using "
+        "EXACTLY the number of running days they asked for, with rest/easy days otherwise, and a "
+        "long run on their preferred day if given. Add cross-training only if they opted in.\n"
+        "4. A short **build-up** note: how the coming weeks progress toward their goal/target race "
+        "and date (include a deload if appropriate).\n"
+        "5. 2-3 **coaching notes** tailored to their goal and current training status.\n\n"
+        "ATHLETE GOALS & PREFERENCES:\n{prefs}\n\nATHLETE DATA:\n{ctx}"
     ),
     "gym": (
-        "Using the data below, write a personalised **7-day gym + mobility/rehab plan** that "
-        "complements the running load.\n- Balance push/pull/legs/core and address likely "
-        "imbalances from the most-trained exercises.\n- Day-by-day table: Day | Focus | Key work | "
-        "Sets×Reps | Notes.\n- Fit strength around running so hard days don't collide; lighten if "
-        "readiness/recovery is poor.\n- Include a short **mobility/prehab** block (no diagnosis) "
-        "for common runner areas (hips, calves, ankles).\n- End with 2-3 recovery bullets.\n\n"
-        "ATHLETE DATA:\n{ctx}"
+        "Design a personalised **gym / strength plan** for this athlete that complements their "
+        "running.\n\nREQUIREMENTS:\n"
+        "1. Choose a sensible **split** for EXACTLY the number of days they asked for (e.g. full-body, "
+        "upper/lower, or push/pull/legs) matched to their goal and experience.\n"
+        "2. A **weekly table**: Day | Focus | Exercises (Sets×Reps×intensity/RPE) | Notes — using ONLY "
+        "their available equipment and fitting their session length.\n"
+        "3. Prioritise their stated **focus areas** and address likely imbalances from their most-trained "
+        "exercises in the data.\n"
+        "4. A **progression scheme** (how to add load/reps over the coming weeks) plus when to deload.\n"
+        "5. Schedule so heavy leg work doesn't collide with key running days; lighten if recovery is poor.\n"
+        "6. A brief **warm-up / mobility** note.\n\n"
+        "ATHLETE GOALS & PREFERENCES:\n{prefs}\n\nATHLETE DATA:\n{ctx}"
+    ),
+    "rehab": (
+        "Provide a **general rehabilitation & return-to-activity guide** for the area/issue the "
+        "athlete describes. This is educational guidance, NOT a diagnosis or medical treatment.\n\n"
+        "REQUIREMENTS:\n"
+        "1. Open with a clear **safety note**: this isn't medical advice; if pain is high/worsening, "
+        "there's swelling, instability, numbness or it followed trauma, see a physio/doctor first.\n"
+        "2. A **stage-appropriate approach** for their reported stage (acute / early / mid / late / "
+        "return-to-sport) and pain level — protect & calm early, progressively load later.\n"
+        "3. A **phased exercise progression** table: Phase | Goal | Exercises (sets×reps/hold) | "
+        "Progression criteria — appropriate to the body area and their available equipment/days.\n"
+        "4. A **pain-monitoring** rule (e.g. traffic-light: keep pain ≤3/10 during & settled by next day).\n"
+        "5. **Red flags** to stop and seek assessment, and **return-to-activity criteria**.\n"
+        "Keep it general and conservative; do not name a specific diagnosis.\n\n"
+        "ATHLETE'S REHAB DETAILS:\n{prefs}\n\nATHLETE DATA:\n{ctx}"
     ),
     "readiness": (
-        "Using the data below, give **today's training recommendation**.\n"
+        "Give **today's training recommendation** from the data.\n"
         "- Start with a bold one-line verdict: TRAIN HARD / TRAIN EASY / ACTIVE RECOVERY / REST.\n"
-        "- 3-5 bullets explaining the call from readiness score, HRV status, sleep, recovery time "
-        "and training status.\n- Suggest one concrete session (or rest) for today with specifics.\n"
+        "- 3-5 bullets explaining the call from readiness score, HRV status, sleep, recovery time and "
+        "training status.\n- Suggest one concrete session (or rest) for today with specifics.\n"
         "- Note the single biggest lever to improve tomorrow's readiness.\n\nATHLETE DATA:\n{ctx}"
     ),
 }
 
+_TEMPERATURE = {"running": 0.4, "gym": 0.4, "rehab": 0.3, "readiness": 0.5}
 
-def generate(kind: str, ctx: dict, model: str = MODEL) -> str:
-    """Generate a coaching output. kind in {'running','gym','readiness'}."""
-    prompt = _PROMPTS[kind].format(ctx=format_context(ctx))
-    out = chat(_SYSTEM, prompt, model=model)
+
+def generate(kind: str, ctx: dict, prefs: dict = None, model: str = MODEL) -> str:
+    """Generate a coaching output. kind in {'running','gym','rehab','readiness'}."""
+    prompt = _PROMPTS[kind].format(ctx=format_context(ctx), prefs=format_prefs(prefs or {}))
+    out = chat(_SYSTEM, prompt, model=model, temperature=_TEMPERATURE.get(kind, 0.5))
     return f"{out}\n\n---\n{DISCLAIMER}"

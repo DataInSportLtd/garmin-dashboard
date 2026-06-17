@@ -66,6 +66,16 @@ def splits(activity_id: int):
     return gd.fetch_splits(client(), activity_id)
 
 
+@st.cache_data(ttl=1800, show_spinner="Loading sleep…")
+def sleep_detail(day: str):
+    return gd.fetch_sleep_detail(client(), day)
+
+
+@st.cache_data(ttl=1800, show_spinner="Loading HRV…")
+def hrv_detail(day: str):
+    return gd.fetch_hrv_detail(client(), day)
+
+
 def refresh_button(sidebar=True):
     target = st.sidebar if sidebar else st
     if target.button("🔄 Refresh data"):

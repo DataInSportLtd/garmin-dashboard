@@ -222,6 +222,91 @@ def fetch_splits(g, activity_id: int) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+_STAGE_LABEL = {0.0: "Deep", 1.0: "Light", 2.0: "REM", 3.0: "Awake"}
+_STAGE_RANK = {"Deep": 0, "Light": 1, "REM": 2, "Awake": 3}
+
+
+def _series_df(items, offset_ms=0):
+    """Convert Garmin [{'value':v,'startGMT':ms}, ...] to a time/value frame."""
+    if not items:
+        return pd.DataFrame(columns=["time", "value"])
+    df = pd.DataFrame(items)
+    if "startGMT" in df:
+        df["time"] = pd.to_datetime(df["startGMT"] + offset_ms, unit="ms")
+    df["value"] = pd.to_numeric(df.get("value"), errors="coerce")
+    return df[["time", "value"]].dropna()
+
+
+def fetch_sleep_detail(g, day: str) -> dict:
+    """Full single-night sleep breakdown: stages, scores, overnight physiology."""
+    s = _safe(lambda: g.get_sleep_data(day), {}) or {}
+    dto = s.get("dailySleepDTO") or {}
+    if not dto.get("sleepTimeSeconds"):
+        return {}
+
+    # Local-clock offset (timestamps come back as GMT epoch ms).
+    try:
+        offset = int(dto["sleepStartTimestampLocal"]) - int(dto["sleepStartTimestampGMT"])
+    except Exception:
+        offset = 0
+
+    scores = dto.get("sleepScores") or {}
+
+    # Hypnogram from sleepLevels.
+    stages = []
+    for lvl in s.get("sleepLevels") or []:
+        label = _STAGE_LABEL.get(lvl.get("activityLevel"))
+        if not label:
+            continue
+        start = pd.to_datetime(lvl["startGMT"]) + pd.Timedelta(milliseconds=offset)
+        end = pd.to_datetime(lvl["endGMT"]) + pd.Timedelta(milliseconds=offset)
+        stages.append({"start": start, "end": end, "stage": label,
+                       "rank": _STAGE_RANK[label]})
+    stages_df = pd.DataFrame(stages)
+
+    return {
+        "score": (scores.get("overall") or {}).get("value"),
+        "score_qualifier": (scores.get("overall") or {}).get("qualifierKey"),
+        "qualifiers": {k: (v or {}).get("qualifierKey")
+                       for k, v in scores.items() if isinstance(v, dict)},
+        "sleep_h": (dto.get("sleepTimeSeconds") or 0) / 3600,
+        "deep_h": (dto.get("deepSleepSeconds") or 0) / 3600,
+        "light_h": (dto.get("lightSleepSeconds") or 0) / 3600,
+        "rem_h": (dto.get("remSleepSeconds") or 0) / 3600,
+        "awake_h": (dto.get("awakeSleepSeconds") or 0) / 3600,
+        "resting_hr": dto.get("restingHeartRate"),
+        "avg_hr": dto.get("avgHeartRate"),
+        "avg_stress": dto.get("avgSleepStress"),
+        "respiration": dto.get("averageRespirationValue"),
+        "resp_low": dto.get("lowestRespirationValue"),
+        "resp_high": dto.get("highestRespirationValue"),
+        "awake_count": dto.get("awakeCount"),
+        "overnight_hrv": s.get("avgOvernightHrv"),
+        "hrv_status": s.get("hrvStatus"),
+        "bb_change": s.get("bodyBatteryChange"),
+        "skin_temp_dev_c": s.get("avgSkinTempDeviationC"),
+        "sleep_need_actual": (dto.get("sleepNeed") or {}).get("actual"),
+        "sleep_need_baseline": (dto.get("sleepNeed") or {}).get("baseline"),
+        "feedback": (dto.get("sleepScoreFeedback") or "").replace("_", " ").title(),
+        "stages": stages_df,
+        "hr_series": _series_df(s.get("sleepHeartRate"), offset),
+        "stress_series": _series_df(s.get("sleepStress"), offset),
+        "bb_series": _series_df(s.get("sleepBodyBattery"), offset),
+    }
+
+
+def fetch_hrv_detail(g, day: str) -> dict:
+    """Overnight HRV: summary, baseline range, and per-reading series."""
+    h = _safe(lambda: g.get_hrv_data(day), {}) or {}
+    summary = h.get("hrvSummary") or {}
+    readings = h.get("hrvReadings") or []
+    rdf = pd.DataFrame(readings)
+    if not rdf.empty:
+        rdf["time"] = pd.to_datetime(rdf["readingTimeLocal"], errors="coerce")
+        rdf = rdf.rename(columns={"hrvValue": "value"})[["time", "value"]].dropna()
+    return {"summary": summary, "baseline": summary.get("baseline") or {}, "readings": rdf}
+
+
 def fmt_duration(seconds) -> str:
     """Seconds -> H:MM:SS or M:SS, for race-time display."""
     if seconds is None or pd.isna(seconds):

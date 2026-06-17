@@ -89,11 +89,24 @@ def fetch_activities(g, limit: int = 30) -> pd.DataFrame:
             "avg_hr": a.get("averageHR"),
             "max_hr": a.get("maxHR"),
             "elev_gain_m": a.get("elevationGain"),
+            "training_load": a.get("activityTrainingLoad"),
         })
     df = pd.DataFrame(rows)
     if not df.empty:
         df["start"] = pd.to_datetime(df["start"], errors="coerce")
         df = df.sort_values("start", ascending=False).reset_index(drop=True)
+    return df
+
+
+def fetch_daily_steps(g, start: str, end: str) -> pd.DataFrame:
+    """Bulk daily steps for a date range (one API call)."""
+    data = _safe(lambda: g.get_daily_steps(start, end), []) or []
+    df = pd.DataFrame(data)
+    if not df.empty:
+        df["date"] = pd.to_datetime(df["calendarDate"], errors="coerce")
+        for c in ["totalSteps", "totalDistance", "stepGoal"]:
+            if c in df:
+                df[c] = pd.to_numeric(df[c], errors="coerce")
     return df
 
 

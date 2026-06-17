@@ -76,6 +76,11 @@ def hrv_detail(day: str):
     return gd.fetch_hrv_detail(client(), day)
 
 
+@st.cache_data(ttl=1800, show_spinner="Loading daily steps…")
+def daily_steps(start: date, end: date):
+    return gd.fetch_daily_steps(client(), start.isoformat(), end.isoformat())
+
+
 @st.cache_data(ttl=1800, show_spinner="Loading strength sessions…")
 def strength(limit: int = 60):
     return gd.fetch_strength(client(), limit)

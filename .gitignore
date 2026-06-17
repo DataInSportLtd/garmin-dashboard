@@ -1,0 +1,10 @@
+# Python environment & caches
+.venv/
+__pycache__/
+*.pyc
+
+# Local secrets / sessions — must never be committed
+.garminconnect/
+*.token
+.env
+.streamlit/secrets.toml

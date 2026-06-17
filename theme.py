@@ -5,7 +5,11 @@ Palette is derived from datainsport.com. Import and call `inject()` once at the
 top of every page, then use `page_header()` / `kpi()` for branded components.
 """
 
+import os
+
 import streamlit as st
+
+LOGO_PATH = os.path.join(os.path.dirname(__file__), "assets", "logo.png")
 
 # --- Brand palette (from datainsport.com) -----------------------------------
 COLORS = {
@@ -15,7 +19,7 @@ COLORS = {
     "steel": "#2b5672",       # secondary
     "electric": "#116dff",    # accent / links
     "sky": "#4eb7f5",         # accent
-    "cyan": "#47C9C9",        # primary futuristic accent
+    "cyan": "#1BCACA",        # primary accent — matched to the logo cyan
     "orange": "#ff8044",      # highlight / warning
     "red": "#df3131",         # alert
     "text": "#E2E2E2",        # primary text
@@ -23,7 +27,7 @@ COLORS = {
 }
 
 # Ordered accent list for charts.
-CHART_SEQUENCE = ["#47C9C9", "#4eb7f5", "#116dff", "#ff8044", "#2b5672", "#df3131"]
+CHART_SEQUENCE = ["#1BCACA", "#4eb7f5", "#116dff", "#ff8044", "#2b5672", "#df3131"]
 
 _CSS = f"""
 <style>
@@ -95,8 +99,18 @@ hr {{ border-color: rgba(78,183,245,0.12); }}
 
 
 def inject():
-    """Inject the brand CSS. Call once near the top of each page."""
+    """Inject the brand CSS + logo. Call once near the top of each page."""
     st.markdown(_CSS, unsafe_allow_html=True)
+    logo()
+
+
+def logo():
+    """Show the Data In Sport logo at the top of the sidebar/app (if present)."""
+    if os.path.exists(LOGO_PATH):
+        try:
+            st.logo(LOGO_PATH, size="large")
+        except TypeError:  # older streamlit without size kwarg
+            st.logo(LOGO_PATH)
 
 
 def page_header(title: str, subtitle: str = "", icon: str = ""):

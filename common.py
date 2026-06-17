@@ -76,6 +76,16 @@ def hrv_detail(day: str):
     return gd.fetch_hrv_detail(client(), day)
 
 
+@st.cache_data(ttl=1800, show_spinner="Loading strength sessions…")
+def strength(limit: int = 60):
+    return gd.fetch_strength(client(), limit)
+
+
+@st.cache_data(ttl=1800, show_spinner="Loading set log…")
+def exercise_sets(activity_id: int):
+    return gd.fetch_exercise_sets(client(), activity_id)
+
+
 def refresh_button(sidebar=True):
     target = st.sidebar if sidebar else st
     if target.button("🔄 Refresh data"):

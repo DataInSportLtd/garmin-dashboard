@@ -307,6 +307,85 @@ def fetch_hrv_detail(g, day: str) -> dict:
     return {"summary": summary, "baseline": summary.get("baseline") or {}, "readings": rdf}
 
 
+def _pretty(cat) -> str:
+    return (cat or "Unknown").replace("_", " ").title()
+
+
+def fetch_strength(g, limit: int = 60) -> dict:
+    """All strength sessions + per-category breakdowns from one activities pull.
+
+    summarizedExerciseSets is embedded in each activity, so no per-session calls.
+    """
+    acts = _safe(lambda: g.get_activities(0, limit), []) or []
+    strength = [a for a in acts
+                if "strength" in (a.get("activityType") or {}).get("typeKey", "")]
+
+    sessions, by_session, all_cats = [], {}, []
+    for a in strength:
+        aid = a.get("activityId")
+        sessions.append({
+            "activity_id": aid,
+            "name": a.get("activityName"),
+            "start": a.get("startTimeLocal"),
+            "duration_min": (a.get("duration") or 0) / 60 or None,
+            "total_sets": a.get("totalSets"),
+            "active_sets": a.get("activeSets"),
+            "total_reps": a.get("totalReps"),
+            "training_load": a.get("activityTrainingLoad"),
+            "calories": a.get("calories"),
+            "avg_hr": a.get("averageHR"),
+            "max_hr": a.get("maxHR"),
+            **{f"z{i}": a.get(f"hrTimeInZone_{i}") for i in range(1, 6)},
+        })
+        rows = []
+        for s in a.get("summarizedExerciseSets") or []:
+            cat = _pretty(s.get("subCategory") or s.get("category"))
+            row = {
+                "category": cat,
+                "reps": s.get("reps") or 0,
+                "sets": s.get("sets") or 0,
+                "duration_min": (s.get("duration") or 0) / 60000,  # ms -> min
+                "max_weight": s.get("maxWeight") or 0,
+            }
+            rows.append(row)
+            all_cats.append({**row, "activity_id": aid})
+        by_session[aid] = pd.DataFrame(rows)
+
+    sdf = pd.DataFrame(sessions)
+    if not sdf.empty:
+        sdf["start"] = pd.to_datetime(sdf["start"], errors="coerce")
+        sdf = sdf.sort_values("start", ascending=False).reset_index(drop=True)
+
+    cat_df = pd.DataFrame(all_cats)
+    if not cat_df.empty:
+        cat_totals = (cat_df.groupby("category", as_index=False)
+                      .agg(reps=("reps", "sum"), sets=("sets", "sum"),
+                           sessions=("activity_id", "nunique"))
+                      .sort_values("reps", ascending=False))
+    else:
+        cat_totals = pd.DataFrame(columns=["category", "reps", "sets", "sessions"])
+
+    return {"sessions": sdf, "by_session": by_session, "category_totals": cat_totals}
+
+
+def fetch_exercise_sets(g, activity_id: int) -> pd.DataFrame:
+    """Set-by-set log for one strength session (active + rest)."""
+    es = _safe(lambda: g.get_activity_exercise_sets(activity_id), {}) or {}
+    rows = []
+    for i, s in enumerate(es.get("exerciseSets") or [], 1):
+        ex = (s.get("exercises") or [{}])[0]
+        cat = ex.get("category")
+        rows.append({
+            "set": i,
+            "type": s.get("setType"),
+            "exercise": _pretty(ex.get("name") or cat) if cat and cat != "UNKNOWN" else "—",
+            "reps": s.get("repetitionCount"),
+            "weight_kg": s.get("weight"),
+            "duration_s": s.get("duration"),
+        })
+    return pd.DataFrame(rows)
+
+
 def fmt_duration(seconds) -> str:
     """Seconds -> H:MM:SS or M:SS, for race-time display."""
     if seconds is None or pd.isna(seconds):

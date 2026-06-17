@@ -26,51 +26,62 @@ def _daterange(start: date, end: date):
         d += timedelta(days=1)
 
 
-def fetch_daily(g, start: date, end: date) -> pd.DataFrame:
-    """One row per day of summary, sleep, HRV and stress metrics."""
-    rows = []
-    for d in _daterange(start, end):
-        iso = d.isoformat()
-        stats = _safe(lambda: g.get_stats(iso), {}) or {}
-        sleep = _safe(lambda: g.get_sleep_data(iso), {}) or {}
-        hrv = _safe(lambda: g.get_hrv_data(iso), {}) or {}
+def fetch_daily_one(g, day) -> dict:
+    """One day's summary/sleep/HRV/stress metrics as a JSON-serializable dict.
 
-        sleep_dto = (sleep or {}).get("dailySleepDTO", {}) or {}
-        sleep_scores = sleep_dto.get("sleepScores", {}) or {}
-        hrv_summary = (hrv or {}).get("hrvSummary", {}) or {}
+    `date` is stored as an ISO string so the row can be cached as-is (see db.py).
+    """
+    iso = day if isinstance(day, str) else day.isoformat()
+    stats = _safe(lambda: g.get_stats(iso), {}) or {}
+    sleep = _safe(lambda: g.get_sleep_data(iso), {}) or {}
+    hrv = _safe(lambda: g.get_hrv_data(iso), {}) or {}
 
-        rows.append({
-            "date": pd.Timestamp(d),
-            "steps": stats.get("totalSteps"),
-            "step_goal": stats.get("dailyStepGoal"),
-            "calories": stats.get("totalKilocalories"),
-            "active_calories": stats.get("activeKilocalories"),
-            "resting_hr": stats.get("restingHeartRate"),
-            "min_hr": stats.get("minHeartRate"),
-            "max_hr": stats.get("maxHeartRate"),
-            "floors": stats.get("floorsAscended"),
-            "moderate_min": stats.get("moderateIntensityMinutes"),
-            "vigorous_min": stats.get("vigorousIntensityMinutes"),
-            "avg_stress": stats.get("averageStressLevel"),
-            "max_stress": stats.get("maxStressLevel"),
-            "bb_high": stats.get("bodyBatteryHighestValue"),
-            "bb_low": stats.get("bodyBatteryLowestValue"),
-            "sleep_hours": (sleep_dto.get("sleepTimeSeconds") or 0) / 3600 or None,
-            "deep_hours": (sleep_dto.get("deepSleepSeconds") or 0) / 3600 or None,
-            "light_hours": (sleep_dto.get("lightSleepSeconds") or 0) / 3600 or None,
-            "rem_hours": (sleep_dto.get("remSleepSeconds") or 0) / 3600 or None,
-            "awake_hours": (sleep_dto.get("awakeSleepSeconds") or 0) / 3600 or None,
-            "sleep_score": (sleep_scores.get("overall") or {}).get("value"),
-            "hrv_avg": hrv_summary.get("lastNightAvg"),
-            "hrv_status": hrv_summary.get("status"),
-        })
+    sleep_dto = (sleep or {}).get("dailySleepDTO", {}) or {}
+    sleep_scores = sleep_dto.get("sleepScores", {}) or {}
+    hrv_summary = (hrv or {}).get("hrvSummary", {}) or {}
 
+    return {
+        "date": iso,
+        "steps": stats.get("totalSteps"),
+        "step_goal": stats.get("dailyStepGoal"),
+        "calories": stats.get("totalKilocalories"),
+        "active_calories": stats.get("activeKilocalories"),
+        "resting_hr": stats.get("restingHeartRate"),
+        "min_hr": stats.get("minHeartRate"),
+        "max_hr": stats.get("maxHeartRate"),
+        "floors": stats.get("floorsAscended"),
+        "moderate_min": stats.get("moderateIntensityMinutes"),
+        "vigorous_min": stats.get("vigorousIntensityMinutes"),
+        "avg_stress": stats.get("averageStressLevel"),
+        "max_stress": stats.get("maxStressLevel"),
+        "bb_high": stats.get("bodyBatteryHighestValue"),
+        "bb_low": stats.get("bodyBatteryLowestValue"),
+        "sleep_hours": (sleep_dto.get("sleepTimeSeconds") or 0) / 3600 or None,
+        "deep_hours": (sleep_dto.get("deepSleepSeconds") or 0) / 3600 or None,
+        "light_hours": (sleep_dto.get("lightSleepSeconds") or 0) / 3600 or None,
+        "rem_hours": (sleep_dto.get("remSleepSeconds") or 0) / 3600 or None,
+        "awake_hours": (sleep_dto.get("awakeSleepSeconds") or 0) / 3600 or None,
+        "sleep_score": (sleep_scores.get("overall") or {}).get("value"),
+        "hrv_avg": hrv_summary.get("lastNightAvg"),
+        "hrv_status": hrv_summary.get("status"),
+    }
+
+
+def daily_frame(rows: list) -> pd.DataFrame:
+    """Build the typed daily DataFrame from a list of fetch_daily_one dicts."""
     df = pd.DataFrame(rows)
-    # Coerce numeric columns (everything except date / hrv_status).
+    if df.empty:
+        return df
+    df["date"] = pd.to_datetime(df["date"])
     for col in df.columns:
         if col not in ("date", "hrv_status"):
             df[col] = pd.to_numeric(df[col], errors="coerce")
-    return df
+    return df.sort_values("date").reset_index(drop=True)
+
+
+def fetch_daily(g, start: date, end: date) -> pd.DataFrame:
+    """One row per day of summary, sleep, HRV and stress metrics."""
+    return daily_frame([fetch_daily_one(g, d) for d in _daterange(start, end)])
 
 
 def fetch_activities(g, limit: int = 30) -> pd.DataFrame:

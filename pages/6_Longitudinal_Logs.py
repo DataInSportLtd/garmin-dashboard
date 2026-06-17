@@ -9,6 +9,7 @@ from plotly.subplots import make_subplots
 import streamlit as st
 
 import common
+import db
 import theme
 
 st.set_page_config(page_title="DIS · Longitudinal & Logs", page_icon="📚", layout="wide")
@@ -29,8 +30,15 @@ with tab_trends:
     window = st.select_slider(
         "Window (days)", [30, 60, 90, 180, 365], value=90,
         help="Larger windows take longer to load the first time (then cached 30 min).")
+    n, dmin, dmax = db.cache_stats()
+    cap = st.columns([4, 1])
+    cap[0].caption(
+        f"🗄️ Local cache: {n} days stored ({dmin}–{dmax})." if n else
+        "🗄️ Local cache empty — first load will populate it.")
+    if cap[1].button("Clear cache"):
+        db.clear_cache(); st.cache_data.clear(); st.rerun()
     if window >= 180:
-        st.caption("⏳ Long window — first load pulls day-by-day from Garmin and may take a minute.")
+        st.caption("⏳ Long window — first load pulls uncached days from Garmin; cached days are instant.")
     end = date.today()
     start = end - timedelta(days=window - 1)
 

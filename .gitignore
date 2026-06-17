@@ -8,3 +8,6 @@ __pycache__/
 *.token
 .env
 .streamlit/secrets.toml
+
+# Local data cache (personal health data — keep on-device only)
+*.db

@@ -4,6 +4,7 @@ from datetime import date
 
 import streamlit as st
 
+import db
 import garmin_data as gd
 from garmin_client import get_client
 
@@ -28,7 +29,8 @@ def ensure_auth():
 
 @st.cache_data(ttl=900, show_spinner="Fetching daily metrics…")
 def daily(start: date, end: date):
-    return gd.fetch_daily(client(), start, end)
+    # Reads from the local SQLite cache; only missing/recent days hit Garmin.
+    return db.cached_daily(client(), start, end)
 
 
 @st.cache_data(ttl=900, show_spinner="Fetching activities…")

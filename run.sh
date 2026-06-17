@@ -25,4 +25,4 @@ if [ ! -d "$TOKENSTORE" ]; then
 fi
 
 # 3) Launch.
-exec ./.venv/bin/streamlit run dashboard.py
+exec ./.venv/bin/streamlit run Home.py

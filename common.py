@@ -56,6 +56,16 @@ def training_readiness(day: str):
     return gd.fetch_training_readiness(client(), day)
 
 
+@st.cache_data(ttl=1800, show_spinner="Loading run streams…")
+def streams(activity_id: int):
+    return gd.fetch_activity_streams(client(), activity_id)
+
+
+@st.cache_data(ttl=1800, show_spinner="Loading splits…")
+def splits(activity_id: int):
+    return gd.fetch_splits(client(), activity_id)
+
+
 def refresh_button(sidebar=True):
     target = st.sidebar if sidebar else st
     if target.button("🔄 Refresh data"):

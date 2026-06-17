@@ -79,6 +79,7 @@ def fetch_activities(g, limit: int = 30) -> pd.DataFrame:
     rows = []
     for a in acts:
         rows.append({
+            "activity_id": a.get("activityId"),
             "name": a.get("activityName"),
             "type": (a.get("activityType") or {}).get("typeKey"),
             "start": a.get("startTimeLocal"),
@@ -156,6 +157,69 @@ def fetch_runs(g, limit: int = 50) -> pd.DataFrame:
         # pace in min/km
         runs["pace_min_km"] = runs["duration_min"] / runs["distance_km"]
     return runs.reset_index(drop=True)
+
+
+def fetch_activity_streams(g, activity_id: int) -> pd.DataFrame:
+    """Per-sample time-series for one activity (GPS, HR, pace, cadence, power…).
+
+    Garmin returns rows of raw metric arrays aligned to `metricDescriptors`;
+    we pivot them into named columns and derive friendly fields.
+    """
+    det = _safe(lambda: g.get_activity_details(activity_id, maxchart=4000, maxpoly=8000), {}) or {}
+    descs = det.get("metricDescriptors", []) or []
+    rows = det.get("activityDetailMetrics", []) or []
+    if not descs or not rows:
+        return pd.DataFrame()
+
+    idx_to_key = {d["metricsIndex"]: d.get("key") for d in descs}
+    n = max(idx_to_key) + 1
+    cols = [idx_to_key.get(i, f"m{i}") for i in range(n)]
+    df = pd.DataFrame([r.get("metrics", []) for r in rows], columns=cols)
+
+    # Derive friendly columns (guarding against missing raw fields).
+    def col(name):
+        return df[name] if name in df else pd.Series([None] * len(df))
+
+    out = pd.DataFrame({
+        "distance_km": pd.to_numeric(col("sumDistance"), errors="coerce") / 1000,
+        "elapsed_s": pd.to_numeric(col("sumElapsedDuration"), errors="coerce"),
+        "hr": pd.to_numeric(col("directHeartRate"), errors="coerce"),
+        "elevation_m": pd.to_numeric(col("directElevation"), errors="coerce"),
+        "speed_mps": pd.to_numeric(col("directSpeed"), errors="coerce"),
+        "cadence_spm": pd.to_numeric(col("directRunCadence"), errors="coerce"),
+        "power_w": pd.to_numeric(col("directPower"), errors="coerce"),
+        "stride_cm": pd.to_numeric(col("directStrideLength"), errors="coerce"),
+        "gct_ms": pd.to_numeric(col("directGroundContactTime"), errors="coerce"),
+        "vert_osc_cm": pd.to_numeric(col("directVerticalOscillation"), errors="coerce"),
+        "stamina": pd.to_numeric(col("directAvailableStamina"), errors="coerce"),
+        "lat": pd.to_numeric(col("directLatitude"), errors="coerce"),
+        "lon": pd.to_numeric(col("directLongitude"), errors="coerce"),
+    })
+    # Pace (min/km) from speed; ignore near-zero speed to avoid infinities.
+    out["pace_min_km"] = out["speed_mps"].where(out["speed_mps"] > 0.3).rdiv(1000 / 60)
+    return out
+
+
+def fetch_splits(g, activity_id: int) -> pd.DataFrame:
+    """Per-km / per-lap splits for one activity."""
+    data = _safe(lambda: g.get_activity_splits(activity_id), {}) or {}
+    laps = data.get("lapDTOs") or data.get("splits") or []
+    rows = []
+    for i, lap in enumerate(laps, 1):
+        dist = lap.get("distance") or 0
+        dur = lap.get("duration") or lap.get("movingDuration") or 0
+        rows.append({
+            "lap": i,
+            "distance_km": dist / 1000 if dist else None,
+            "duration_min": dur / 60 if dur else None,
+            "pace_min_km": (dur / 60) / (dist / 1000) if dist and dur else None,
+            "avg_hr": lap.get("averageHR"),
+            "max_hr": lap.get("maxHR"),
+            "avg_cadence": lap.get("averageRunCadence"),
+            "elev_gain_m": lap.get("elevationGain"),
+            "avg_power_w": lap.get("averagePower"),
+        })
+    return pd.DataFrame(rows)
 
 
 def fmt_duration(seconds) -> str:

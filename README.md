@@ -43,6 +43,21 @@ Because it uses unofficial endpoints, a metric can occasionally break when Garmi
 changes their site. If a panel shows an error, run `peek.py` (below) to see the
 current field names.
 
+## AI Coach (optional, fully local)
+
+The **AI Coach** page generates running / gym-rehab / daily-readiness guidance from
+your data using a **local** model — nothing is sent to any cloud service. It needs
+[Ollama](https://ollama.com):
+
+```bash
+# one-time: install Ollama (download the app from ollama.com), then pull the model
+ollama pull llama3.1:8b
+```
+
+`run.sh` auto-starts the Ollama server if it's installed. To use a different model,
+set `OLLAMA_MODEL` (e.g. `export OLLAMA_MODEL=qwen2.5:7b`). The other pages work
+fine without Ollama — only the AI Coach page requires it.
+
 ## Files
 
 | File | Purpose |

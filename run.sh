@@ -24,5 +24,13 @@ if [ ! -d "$TOKENSTORE" ]; then
   ./.venv/bin/python garmin_client.py
 fi
 
-# 3) Launch.
+# 3) Start the local AI server (Ollama) if installed and not already running.
+OLLAMA="${OLLAMA_BIN:-$HOME/.local/bin/ollama}"
+[ -x "$OLLAMA" ] || OLLAMA="$(command -v ollama || true)"
+if [ -n "$OLLAMA" ] && ! curl -fsS http://localhost:11434/api/tags >/dev/null 2>&1; then
+  echo "Starting local AI server (Ollama)…"
+  nohup "$OLLAMA" serve > "${TMPDIR:-/tmp}/ollama.log" 2>&1 &
+fi
+
+# 4) Launch.
 exec ./.venv/bin/streamlit run Home.py
